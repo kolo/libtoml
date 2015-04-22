@@ -9,6 +9,9 @@ const (
 	tokenEOF
 
 	tokenString
+	tokenComment
+	tokenTable
+	tokenArrayOfTables
 )
 
 type token struct {
@@ -24,9 +27,9 @@ func (t token) String() string {
 		return t.val
 	}
 
-	if len(t.val) > 10 {
-		return fmt.Sprintf("%.10q...", t.val)
-	}
+	// 	if len(t.val) > 10 {
+	// 		return fmt.Sprintf("%.10q...", t.val)
+	// 	}
 
 	return fmt.Sprintf("%q", t.val)
 }

@@ -1,8 +1,16 @@
 package libtoml
 
-import "unicode/utf8"
+import (
+	"strings"
+	"unicode/utf8"
+)
 
 const eof = -(iota + 1)
+
+const (
+	leftArrayOfTables  = "[["
+	rightArrayOfTables = "]]"
+)
 
 type stateFn func(*lexer) stateFn
 
@@ -33,19 +41,6 @@ func (l *lexer) run() {
 	close(l.tokens)
 }
 
-func (l *lexer) emit(typ tokenType) {
-	l.tokens <- token{typ, l.input[l.start:l.pos]}
-	l.start = l.pos
-}
-
-func (l *lexer) backup() {
-	l.pos -= l.width
-}
-
-func (l *lexer) ignore() {
-	l.start = l.pos
-}
-
 func (l *lexer) next() rune {
 	if l.pos >= len(l.input) {
 		l.width = 0
@@ -60,6 +55,24 @@ func (l *lexer) next() rune {
 	return r
 }
 
+func (l *lexer) emit(typ tokenType) {
+	l.tokens <- token{typ, l.input[l.start:l.pos]}
+	l.start = l.pos
+}
+
+func (l *lexer) backup() {
+	l.pos -= l.width
+}
+
+func (l *lexer) ignore() {
+	l.start = l.pos
+}
+
+func (l *lexer) errorf(err string) stateFn {
+	l.tokens <- token{tokenError, err}
+	return nil
+}
+
 // lexSkip skips input until it reaches a non space symbol or EOF.
 func lexSkip(l *lexer) stateFn {
 	for {
@@ -72,9 +85,57 @@ func lexSkip(l *lexer) stateFn {
 		if !isSpace(r) && !isEndOfLine(r) {
 			l.backup()
 			l.ignore()
-			return lexString
+
+			switch r {
+			case '#':
+				return lexComment
+			case '[':
+				return lexTable
+			default:
+				return lexString
+			}
 		}
 	}
+}
+
+func lexComment(l *lexer) stateFn {
+	for {
+		r := l.next()
+		if isEndOfLine(r) {
+			break
+		}
+	}
+
+	l.emit(tokenComment)
+	return lexSkip
+}
+
+func lexTable(l *lexer) stateFn {
+	if strings.HasPrefix(l.input[l.start:], leftArrayOfTables) {
+		return lexArrayOfTables
+	}
+
+	l.pos += 1
+	i := strings.Index(l.input[l.start:], "]")
+	if i < 0 {
+		return l.errorf("unclosed table name")
+	}
+	l.pos += i
+	l.emit(tokenTable)
+
+	return lexSkip
+}
+
+func lexArrayOfTables(l *lexer) stateFn {
+	l.pos += len(leftArrayOfTables)
+	i := strings.Index(l.input[l.start:], rightArrayOfTables)
+	if i < 0 {
+		return l.errorf("unclosed table name")
+	}
+	l.pos += i
+	l.emit(tokenArrayOfTables)
+
+	return lexSkip
 }
 
 func lexString(l *lexer) stateFn {
